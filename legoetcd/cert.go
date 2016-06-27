@@ -72,6 +72,81 @@ func (c *Client) NewCert(domains []string, csrFile string, bundle bool) (*Cert, 
 	}, nil
 }
 
+// LoadCert loads the certificate from ETCD
+func (c *Client) LoadCert(domains []string) (*Cert, error) {
+	cert := &Cert{
+		Domains: domains,
+		Cert:    acme.CertificateResource{},
+		client:  c,
+	}
+
+	if err := cert.loadMeta(); err != nil {
+		return nil, err
+	}
+	if err := cert.loadCert(); err != nil {
+		return nil, err
+	}
+	if err := cert.loadKey(); err != nil {
+		return nil, err
+	}
+
+	return cert, nil
+}
+
+func (c *Cert) loadMeta() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, fmt.Sprintf(metaKey, c.Domains[0]), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// unmarshal right to the struct
+	return json.Unmarshal([]byte(resp.Node.Value), &c.Cert)
+}
+
+func (c *Cert) loadCert() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, fmt.Sprintf(certKey, c.Domains[0]), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// load the cert to the struct
+	c.Cert.Certificate = []byte(resp.Node.Value)
+	return nil
+}
+
+func (c *Cert) loadKey() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, fmt.Sprintf(keyKey, c.Domains[0]), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// load the cert to the struct
+	c.Cert.PrivateKey = []byte(resp.Node.Value)
+	return nil
+}
+
+// Renew renews the certificate through the ACME client.
+func (c *Cert) Renew(bundle bool) error {
+	cert, err := c.client.ACME.RenewCertificate(c.Cert, bundle)
+	if err != nil {
+		return err
+	}
+	c.Cert = cert
+	return nil
+}
+
 // Save saves the certificate to etcd.
 func (c *Cert) Save(pem bool) error {
 	if err := c.saveCert(); err != nil {

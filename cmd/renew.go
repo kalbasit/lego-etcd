@@ -1,8 +1,21 @@
+// Copyright © 2016 NAME HERE <EMAIL ADDRESS>
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package cmd
 
 import (
 	"log"
-	"os"
 	"strings"
 
 	"github.com/coreos/etcd/client"
@@ -11,11 +24,9 @@ import (
 	"github.com/xenolf/lego/acme"
 )
 
-var noBundle bool
-
-// runCmd represents the run command
-var runCmd = &cobra.Command{
-	Use:   "run",
+// renewCmd represents the renew command
+var renewCmd = &cobra.Command{
+	Use:   "renew",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -23,26 +34,26 @@ and usage of using your command. For example:
 Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
-	Run: run,
+	Run: renew,
 }
 
 func init() {
-	RootCmd.AddCommand(runCmd)
+	RootCmd.AddCommand(renewCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// runCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// renewCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// runCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// renewCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
-	runCmd.Flags().BoolVar(&noBundle, "no-bundle", false, "Do not create a certificate bundle by adding the issuers certificate to the new certificate")
+	renewCmd.Flags().BoolVar(&noBundle, "no-bundle", false, "Do not create a certificate bundle by adding the issuers certificate to the new certificate")
 }
 
-func run(cmd *cobra.Command, args []string) {
+func renew(cmd *cobra.Command, args []string) {
 	// get all the values from the persistent flags
 	pem, err := RootCmd.PersistentFlags().GetBool("pem")
 	if err != nil {
@@ -71,10 +82,6 @@ func run(cmd *cobra.Command, args []string) {
 	acmeServer, err := RootCmd.PersistentFlags().GetString("acme-server")
 	if err != nil {
 		log.Fatalf("error loading the acme-server from the persistent flags: %s", err)
-	}
-	csr, err := RootCmd.PersistentFlags().GetString("csr")
-	if err != nil {
-		log.Fatalf("error loading the csr from the persistent flags: %s", err)
 	}
 	email, err := RootCmd.PersistentFlags().GetString("email")
 	if err != nil {
@@ -130,13 +137,15 @@ func run(cmd *cobra.Command, args []string) {
 		log.Fatalf("error registering the account: %s", err)
 	}
 
-	// create a new certificate for domains or csr.
-	cert, failures := acmeClient.NewCert(domains, csr, !noBundle)
-	if len(failures) > 0 {
-		for k, v := range failures {
-			log.Printf("[%s] Could not obtain certificates\n\t%s", k, v.Error())
-		}
-		os.Exit(1)
+	// load the certificate
+	cert, err := acmeClient.LoadCert(domains)
+	if err != nil {
+		log.Fatalf("error load the certificate from etcd: %s", err)
+	}
+
+	// Renew the certificate
+	if err := cert.Renew(!noBundle); err != nil {
+		log.Fatalf("error renewing the certificate: %s", err)
 	}
 
 	// save the certificate
