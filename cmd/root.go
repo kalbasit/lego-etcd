@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initConfig, checkFlags)
 
 	RootCmd.PersistentFlags().Bool("pem", false, "Generate a .pem file by concatanating the .key and .crt files together.")
 	RootCmd.PersistentFlags().BoolP("accept-tos", "a", false, "By setting this flag to true you indicate that you accept the current Let's Encrypt terms of service.")
@@ -62,5 +63,32 @@ func initConfig() {
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	}
+}
+
+func checkFlags() {
+	// we require either domains or csr, but not both
+	csr, err := RootCmd.PersistentFlags().GetString("csr")
+	if err != nil {
+		log.Fatalf("error loading the csr from the persistent flags: %s", err)
+	}
+	domains, err := RootCmd.PersistentFlags().GetStringSlice("domains")
+	if err != nil {
+		log.Fatalf("error loading the domains from the persistent flags: %s", err)
+	}
+	if csr != "" && len(domains) > 0 {
+		log.Fatal("Please specify either --domains/-d or --csr/-c, but not both")
+	}
+	if csr == "" && len(domains) == 0 {
+		log.Fatal("Please specify either --domains/-d or --csr/-c, but not both")
+	}
+
+	// we require at least one etcd endpoint
+	etcdEndpoints, err := RootCmd.PersistentFlags().GetStringSlice("etcd-endpoints")
+	if err != nil {
+		log.Fatalf("error loading the etcd-endpoints from the persistent flags: %s", err)
+	}
+	if len(etcdEndpoints) == 0 {
+		log.Fatal("Please specify an etcd endpoint with --etcd-endpoints/-e")
 	}
 }

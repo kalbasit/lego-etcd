@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/coreos/etcd/client"
 	"github.com/kalbasit/lego-etcd/legoetcd"
 	"github.com/spf13/cobra"
 	"github.com/xenolf/lego/acme"
 )
+
+var noBundle bool
 
 // runCmd represents the run command
 var runCmd = &cobra.Command{
@@ -34,6 +38,8 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// runCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+
+	runCmd.Flags().BoolVar(&noBundle, "no-bundle", false, "Do not create a certificate bundle by adding the issuers certificate to the new certificate")
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -107,7 +113,16 @@ func run(cmd *cobra.Command, args []string) {
 		log.Fatalf("error registering the account: %s", err)
 	}
 
+	// register the domains/CSR
+	cert, failures := acmeClient.NewCert(domains, csr, !noBundle)
+	if len(failures) > 0 {
+		for k, v := range failures {
+			log.Printf("[%s] Could not obtain certificates\n\t%s", k, v.Error())
+		}
+		os.Exit(1)
+	}
+
+	fmt.Printf("%#v", cert)
 	_ = pem
-	_ = csr
-	_ = domains
+
 }
