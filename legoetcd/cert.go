@@ -1,18 +1,38 @@
 package legoetcd
 
 import (
+	"bytes"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"io/ioutil"
+	"time"
 
+	"golang.org/x/net/context"
+
+	"github.com/coreos/etcd/client"
 	"github.com/xenolf/lego/acme"
 )
+
+const (
+	certKey = "/lego/certificates/%s.cert"
+	keyKey  = "/lego/certificates/%s.key"
+	metaKey = "/lego/certificates/%s.json"
+	pemKey  = "/lego/certificates/%s.pem"
+)
+
+// ErrNoPemForCSR is returned when there is no private key.
+var ErrNoPemForCSR = errors.New("unable to save pem without private key; are you using a CSR?")
 
 // Cert represents a domain certificate
 type Cert struct {
 	Domains []string
 	CSR     *x509.CertificateRequest
 	Cert    acme.CertificateResource
+
+	client *Client
 }
 
 // NewCert obtains a new certificate for the domains or the csr.
@@ -48,7 +68,91 @@ func (c *Client) NewCert(domains []string, csrFile string, bundle bool) (*Cert, 
 		Domains: domains,
 		CSR:     csr,
 		Cert:    cert,
+		client:  c,
 	}, nil
+}
+
+// Save saves the certificate to etcd.
+func (c *Cert) Save(pem bool) error {
+	if err := c.saveCert(); err != nil {
+		return err
+	}
+	if err := c.saveMeta(); err != nil {
+		return err
+	}
+	if c.Cert.PrivateKey != nil {
+		if err := c.saveKey(); err != nil {
+			return err
+		}
+		if pem {
+			if err := c.savePem(); err != nil {
+				return err
+			}
+		}
+	} else if pem {
+		return ErrNoPemForCSR
+	}
+
+	return nil
+}
+
+func (c *Cert) saveCert() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// save it to etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	if _, err := kapi.Set(ctx, fmt.Sprintf(certKey, c.Cert.Domain), string(c.Cert.Certificate), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
+		return err
+	}
+
+	cancelFunc()
+	return nil
+}
+
+func (c *Cert) saveKey() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// save it to etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	if _, err := kapi.Set(ctx, fmt.Sprintf(keyKey, c.Cert.Domain), string(c.Cert.PrivateKey), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
+		return err
+	}
+
+	cancelFunc()
+	return nil
+}
+
+func (c *Cert) saveMeta() error {
+	// create the JSON
+	jsonBytes, err := json.Marshal(c.Cert)
+	if err != nil {
+		return err
+	}
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// save it to etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	if _, err := kapi.Set(ctx, fmt.Sprintf(metaKey, c.Cert.Domain), string(jsonBytes), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
+		return err
+	}
+
+	cancelFunc()
+	return nil
+}
+
+func (c *Cert) savePem() error {
+	// combine the cert/key
+	pem := bytes.Join([][]byte{c.Cert.Certificate, c.Cert.PrivateKey}, nil)
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// save it to etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	if _, err := kapi.Set(ctx, fmt.Sprintf(pemKey, c.Cert.Domain), string(pem), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
+		return err
+	}
+
+	cancelFunc()
+	return nil
 }
 
 func readCSRFile(filename string) (*x509.CertificateRequest, error) {

@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/coreos/etcd/client"
 	"github.com/kalbasit/lego-etcd/legoetcd"
@@ -99,8 +99,25 @@ func run(cmd *cobra.Command, args []string) {
 		log.Fatalf("error creating a new etcd client: %s", err)
 	}
 
+	// figure our the key-type
+	var kt acme.KeyType
+	switch strings.ToUpper(keyType) {
+	case "RSA2048":
+		kt = acme.RSA2048
+	case "RSA4096":
+		kt = acme.RSA4096
+	case "RSA8192":
+		kt = acme.RSA8192
+	case "EC256":
+		kt = acme.EC256
+	case "EC384":
+		kt = acme.EC384
+	default:
+		log.Fatalf("unknown key type %q", keyType)
+	}
+
 	// create a new ACME client
-	acmeClient, err := legoetcd.New(etcdClient, acmeServer, email, acme.KeyType(keyType), dns, webRoot, httpAddr, tlsAddr)
+	acmeClient, err := legoetcd.New(etcdClient, acmeServer, email, kt, dns, webRoot, httpAddr, tlsAddr)
 	if err != nil {
 		log.Fatalf("error creating a new ACME server: %s", err)
 	}
@@ -122,7 +139,8 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("%#v", cert)
-	_ = pem
-
+	// save the certificate
+	if err := cert.Save(pem); err != nil {
+		log.Fatalf("error saving the certificate: %s", err)
+	}
 }
