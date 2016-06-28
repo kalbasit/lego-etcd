@@ -67,14 +67,6 @@ func init() {
 
 func checkFlags() {
 	// we require either domains or csr, but not both
-	csr, err := RootCmd.PersistentFlags().GetString("csr")
-	if err != nil {
-		log.Fatalf("error loading the csr from the persistent flags: %s", err)
-	}
-	domains, err := RootCmd.PersistentFlags().GetStringSlice("domains")
-	if err != nil {
-		log.Fatalf("error loading the domains from the persistent flags: %s", err)
-	}
 	if csr != "" && len(domains) > 0 {
 		log.Fatal("Please specify either --domains/-d or --csr/-c, but not both")
 	}
@@ -83,10 +75,6 @@ func checkFlags() {
 	}
 
 	// we require at least one etcd endpoint
-	etcdEndpoints, err := RootCmd.PersistentFlags().GetStringSlice("etcd-endpoints")
-	if err != nil {
-		log.Fatalf("error loading the etcd-endpoints from the persistent flags: %s", err)
-	}
 	if len(etcdEndpoints) == 0 {
 		log.Fatal("Please specify an etcd endpoint with --etcd-endpoints/-e")
 	}
