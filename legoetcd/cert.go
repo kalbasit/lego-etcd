@@ -144,6 +144,11 @@ func (c *Cert) ExpiresIn() (time.Duration, error) {
 	return expTime.Sub(time.Now()), nil
 }
 
+// PEM returns this certificate PEM-encoded.
+func (c *Cert) PEM() []byte {
+	return bytes.Join([][]byte{c.Cert.Certificate, c.Cert.PrivateKey}, nil)
+}
+
 // Save saves the certificate to etcd.
 func (c *Cert) Save(pem bool) error {
 	if err := c.saveCert(); err != nil {
@@ -258,7 +263,7 @@ func (c *Cert) saveMeta() error {
 
 func (c *Cert) savePem() error {
 	// combine the cert/key
-	pem := bytes.Join([][]byte{c.Cert.Certificate, c.Cert.PrivateKey}, nil)
+	pem := c.PEM()
 	// create a new keys API
 	kapi := client.NewKeysAPI(c.client.ETCD)
 	// save it to etcd
