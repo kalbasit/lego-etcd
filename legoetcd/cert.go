@@ -93,49 +93,31 @@ func (c *Client) LoadCert(domains []string) (*Cert, error) {
 	return cert, nil
 }
 
-func (c *Cert) loadMeta() error {
-	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
-	// get it from etcd
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := kapi.Get(ctx, fmt.Sprintf(metaKey, c.Domains[0]), nil)
-	if err != nil {
+// Reload re-reads the certificate from etcd.
+func (c *Cert) Reload() error {
+	if err := c.loadMeta(); err != nil {
 		return err
 	}
-	cancelFunc()
-	// unmarshal right to the struct
-	return json.Unmarshal([]byte(resp.Node.Value), &c.Cert)
-}
-
-func (c *Cert) loadCert() error {
-	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
-	// get it from etcd
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := kapi.Get(ctx, fmt.Sprintf(certKey, c.Domains[0]), nil)
-	if err != nil {
+	if err := c.loadCert(); err != nil {
 		return err
 	}
-	cancelFunc()
-	// load the cert to the struct
-	c.Cert.Certificate = []byte(resp.Node.Value)
+	if err := c.loadKey(); err != nil {
+		return err
+	}
 	return nil
 }
 
-func (c *Cert) loadKey() error {
-	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
-	// get it from etcd
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := kapi.Get(ctx, fmt.Sprintf(keyKey, c.Domains[0]), nil)
-	if err != nil {
-		return err
-	}
-	cancelFunc()
-	// load the cert to the struct
-	c.Cert.PrivateKey = []byte(resp.Node.Value)
-	return nil
-}
+// MetaPath returns the path where the metadata of this certificate is store on etcd.
+func (c *Cert) MetaPath() string { return fmt.Sprintf(metaKey, c.Domains[0]) }
+
+// CertPath returns the path where the CRT of this certificate is store on etcd.
+func (c *Cert) CertPath() string { return fmt.Sprintf(certKey, c.Domains[0]) }
+
+// KeyPath returns the path where the PrivateKey of this certificate is store on etcd.
+func (c *Cert) KeyPath() string { return fmt.Sprintf(keyKey, c.Domains[0]) }
+
+// PemPath returns the path where the PEM of this certificate is store on etcd.
+func (c *Cert) PemPath() string { return fmt.Sprintf(pemKey, c.Domains[0]) }
 
 // Renew renews the certificate through the ACME client.
 func (c *Cert) Renew(bundle bool) error {
@@ -145,6 +127,21 @@ func (c *Cert) Renew(bundle bool) error {
 	}
 	c.Cert = cert
 	return nil
+}
+
+// Expiration returns the certificate's expiration date and time.
+func (c *Cert) Expiration() (time.Time, error) {
+	return acme.GetPEMCertExpiration(c.Cert.Certificate)
+}
+
+// ExpiresIn returns the duration until the certificate expires.
+func (c *Cert) ExpiresIn() (time.Duration, error) {
+	// get the expiration date/time
+	expTime, err := acme.GetPEMCertExpiration(c.Cert.Certificate)
+	if err != nil {
+		return 0, err
+	}
+	return expTime.Sub(time.Now()), nil
 }
 
 // Save saves the certificate to etcd.
@@ -168,6 +165,50 @@ func (c *Cert) Save(pem bool) error {
 		return ErrNoPemForCSR
 	}
 
+	return nil
+}
+
+func (c *Cert) loadMeta() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, c.MetaPath(), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// unmarshal right to the struct
+	return json.Unmarshal([]byte(resp.Node.Value), &c.Cert)
+}
+
+func (c *Cert) loadCert() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, c.CertPath(), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// load the cert to the struct
+	c.Cert.Certificate = []byte(resp.Node.Value)
+	return nil
+}
+
+func (c *Cert) loadKey() error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(c.client.ETCD)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, c.KeyPath(), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// load the cert to the struct
+	c.Cert.PrivateKey = []byte(resp.Node.Value)
 	return nil
 }
 
