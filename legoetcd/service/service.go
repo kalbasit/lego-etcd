@@ -43,6 +43,7 @@ type Service struct {
 	NoBundle bool
 
 	acceptTOS   bool
+	acmeServer  string
 	csrFile     string
 	dns         string
 	domains     []string
@@ -56,12 +57,13 @@ type Service struct {
 // by setting the KeyType on the returned service. By default, the service will
 // generate a bundled certificate (containing the issuer certificate and your
 // certificate). To disable bundling, set `NoBundle` to true.
-func New(etcdConfig client.Config, email string, domains []string, csrFile string, acceptTOS, generatePEM bool, dns, webroot string) *Service {
+func New(etcdConfig client.Config, acmeServer, email string, domains []string, csrFile string, acceptTOS, generatePEM bool, dns, webroot string) *Service {
 	return &Service{
 		CertChan: make(chan *legoetcd.Cert),
 		KeyType:  acme.RSA2048,
 
 		acceptTOS:   acceptTOS,
+		acmeServer:  acmeServer,
 		csrFile:     csrFile,
 		dns:         dns,
 		domains:     domains,
@@ -73,7 +75,7 @@ func New(etcdConfig client.Config, email string, domains []string, csrFile strin
 }
 
 // Run starts the certificate loop
-func (s *Service) Run(etcdEndpoint []string, acmeServer string, stop chan struct{}) error {
+func (s *Service) Run(stop chan struct{}) error {
 	// create an etcd client
 	etcdClient, err := client.New(s.etcdConfig)
 	// create a new keys API
@@ -84,7 +86,7 @@ func (s *Service) Run(etcdEndpoint []string, acmeServer string, stop chan struct
 	}
 	// create a new ACME client
 	// TODO: httpAddr and tlsAddr support
-	acmeClient, err := legoetcd.New(etcdClient, acmeServer, s.email, s.KeyType, s.dns, s.webroot, "", "")
+	acmeClient, err := legoetcd.New(etcdClient, s.acmeServer, s.email, s.KeyType, s.dns, s.webroot, "", "")
 	if err != nil {
 		return fmt.Errorf("error creating a new ACME server: %s", err)
 	}
