@@ -148,17 +148,20 @@ func (s *Service) Run(etcdEndpoint []string, acmeServer string, stop chan struct
 					if err == ErrLockExists {
 						// someone else grabbed the lock, wait for it to be unlocked
 						if err := s.WaitForLockDeletion(etcdClient, lockPath); err != nil {
-							return nil, err
+							log.Printf("error while waiting for the lock to be unlocked: %s", err)
+							goto nextChange
 						}
 					}
 				} else {
 					// lock was grabbed, renew the certificate
 					if err := cert.Renew(s.NoBundle); err != nil {
-						return err
+						log.Printf("error while renewing the certificate: %s", err)
+						goto nextChange
 					}
 					// save the certificate
 					if err := cert.Save(s.generatePEM); err != nil {
-						return err
+						log.Printf("error saving the certificate: %s", err)
+						goto nextChange
 					}
 				}
 			}
