@@ -203,7 +203,8 @@ func (s *Service) generateCertificateIfNecessary(etcdClient client.Client, acmeC
 		// lock was grabbed, create the new account.
 		defer s.Unlock(etcdClient, lockPath)
 		// create a new certificate for domains or csr.
-		cert, failures := acmeClient.NewCert(s.domains, s.csrFile, s.NoBundle)
+		var failures map[string]error
+		cert, failures = acmeClient.NewCert(s.domains, s.csrFile, s.NoBundle)
 		if len(failures) > 0 {
 			for k, v := range failures {
 				log.Printf("[%s] Could not obtain certificates\n\t%s", k, v.Error())
