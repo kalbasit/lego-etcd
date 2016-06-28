@@ -102,7 +102,7 @@ func (s *Service) Run() error {
 	}
 	// watch the certificate on etcd, and send the certificate down the channel.
 	// initialize the certificate
-	cert, err = s.generateCertificateIfNecessary(etcdClient, acmeClient)
+	cert, err := s.generateCertificateIfNecessary(etcdClient, acmeClient)
 	if err != nil {
 		return err
 	}
