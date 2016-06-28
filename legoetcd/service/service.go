@@ -94,7 +94,7 @@ func (s *Service) Run() error {
 		return fmt.Errorf("error creating a new ACME server: %s", err)
 	}
 	// register the account and accept tos
-	if err := acmeClient.RegisterAccount(s.acceptTOS); err != nil {
+	if err := acmeClient.RegisterAccount(etcdClient, s.acceptTOS); err != nil {
 		if err == legoetcd.ErrMustAcceptTOS {
 			return ErrTOSNotAccepted
 		}
@@ -129,7 +129,7 @@ func (s *Service) Run() error {
 			if resp.Action != "get" && resp.Action != "delete" {
 				// sleep for one second to allow whoever updating to finish up with the
 				// key as well.
-				if err := cert.Reload(); err != nil {
+				if err := cert.Reload(etcdClient); err != nil {
 					log.Printf("error reloading the certificate: %s", err)
 				} else {
 					s.CertChan <- cert
@@ -163,12 +163,12 @@ func (s *Service) Run() error {
 					}
 				} else {
 					// lock was grabbed, renew the certificate
-					if err := cert.Renew(s.NoBundle); err != nil {
+					if err := cert.Renew(acmeClient, s.NoBundle); err != nil {
 						log.Printf("error while renewing the certificate: %s", err)
 						goto nextChange
 					}
 					// save the certificate
-					if err := cert.Save(s.generatePEM); err != nil {
+					if err := cert.Save(etcdClient, s.generatePEM); err != nil {
 						log.Printf("error saving the certificate: %s", err)
 						goto nextChange
 					}
@@ -184,7 +184,7 @@ func (s *Service) Run() error {
 
 func (s *Service) generateCertificateIfNecessary(etcdClient client.Client, acmeClient *legoetcd.Client) (*legoetcd.Cert, error) {
 	// try loading the certificate
-	cert, err := acmeClient.LoadCert(s.domains)
+	cert, err := legoetcd.LoadCert(etcdClient, s.domains)
 	if err == nil {
 		return cert, nil
 	}
@@ -211,12 +211,12 @@ func (s *Service) generateCertificateIfNecessary(etcdClient client.Client, acmeC
 			return nil, ErrGeneratingCert
 		}
 		// save the certificate
-		if err := cert.Save(s.generatePEM); err != nil {
+		if err := cert.Save(etcdClient, s.generatePEM); err != nil {
 			return nil, fmt.Errorf("error saving the certificate: %s", err)
 		}
 	}
 	// finally make sure we can load the cert and return it
-	if err := cert.Reload(); err != nil {
+	if err := cert.Reload(etcdClient); err != nil {
 		return nil, fmt.Errorf("was expecting the certificate to be saved: %s", err)
 	}
 	return cert, nil

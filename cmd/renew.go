@@ -84,7 +84,7 @@ func renew(cmd *cobra.Command, args []string) {
 	}
 
 	// register the account and accept tos
-	if err := acmeClient.RegisterAccount(acceptTOS); err != nil {
+	if err := acmeClient.RegisterAccount(etcdClient, acceptTOS); err != nil {
 		if err == legoetcd.ErrMustAcceptTOS {
 			log.Fatalf("Please re-run with --accept-tos to indicate you accept Let's encrypt terms of service.")
 		}
@@ -92,18 +92,18 @@ func renew(cmd *cobra.Command, args []string) {
 	}
 
 	// load the certificate
-	cert, err := acmeClient.LoadCert(domains)
+	cert, err := legoetcd.LoadCert(etcdClient, domains)
 	if err != nil {
 		log.Fatalf("error load the certificate from etcd: %s", err)
 	}
 
 	// Renew the certificate
-	if err := cert.Renew(!noBundle); err != nil {
+	if err := cert.Renew(acmeClient, !noBundle); err != nil {
 		log.Fatalf("error renewing the certificate: %s", err)
 	}
 
 	// save the certificate
-	if err := cert.Save(pem); err != nil {
+	if err := cert.Save(etcdClient, pem); err != nil {
 		log.Fatalf("error saving the certificate: %s", err)
 	}
 }
