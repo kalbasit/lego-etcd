@@ -142,14 +142,24 @@ func (s *Service) Run(etcdEndpoint []string, acmeServer string, stop chan struct
 				goto nextChange
 			}
 			if exp > minimumDurationForRenewal {
-				// TODO: must LOCK here.
-				// renew the certificate
-				if err := cert.Renew(s.NoBundle); err != nil {
-					return err
-				}
-				// save the certificate
-				if err := cert.Save(s.generatePEM); err != nil {
-					return err
+				// we must renew the certificate, grab a lock
+				lockPath := fmt.Sprintf(certLockKey, s.domains[0])
+				if err := s.Lock(etcdClient, lockPath); err != nil {
+					if err == ErrLockExists {
+						// someone else grabbed the lock, wait for it to be unlocked
+						if err := s.WaitForLockDeletion(etcdClient, lockPath); err != nil {
+							return nil, err
+						}
+					}
+				} else {
+					// lock was grabbed, renew the certificate
+					if err := cert.Renew(s.NoBundle); err != nil {
+						return err
+					}
+					// save the certificate
+					if err := cert.Save(s.generatePEM); err != nil {
+						return err
+					}
 				}
 			}
 		case <-stop:
