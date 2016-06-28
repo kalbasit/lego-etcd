@@ -50,6 +50,7 @@ type Service struct {
 	email       string
 	etcdConfig  client.Config
 	generatePEM bool
+	stop        chan struct{}
 	webroot     string
 }
 
@@ -57,7 +58,7 @@ type Service struct {
 // by setting the KeyType on the returned service. By default, the service will
 // generate a bundled certificate (containing the issuer certificate and your
 // certificate). To disable bundling, set `NoBundle` to true.
-func New(etcdConfig client.Config, acmeServer, email string, domains []string, csrFile string, acceptTOS, generatePEM bool, dns, webroot string) *Service {
+func New(etcdConfig client.Config, acmeServer, email string, domains []string, csrFile string, acceptTOS, generatePEM bool, dns, webroot string) (*Service, chan struct{}) {
 	return &Service{
 		CertChan: make(chan *legoetcd.Cert),
 		KeyType:  acme.RSA2048,
@@ -70,12 +71,13 @@ func New(etcdConfig client.Config, acmeServer, email string, domains []string, c
 		email:       email,
 		etcdConfig:  etcdConfig,
 		generatePEM: generatePEM,
+		stop:        make(chan struct{}),
 		webroot:     webroot,
 	}
 }
 
 // Run starts the certificate loop
-func (s *Service) Run(stop chan struct{}) error {
+func (s *Service) Run() error {
 	// create an etcd client
 	etcdClient, err := client.New(s.etcdConfig)
 	// create a new keys API
@@ -108,7 +110,7 @@ func (s *Service) Run(stop chan struct{}) error {
 				// block until either a stop which cancels the context or a stop event
 				// which is sent after the current next unblocks.
 				select {
-				case <-stop:
+				case <-s.stop:
 					cancelFunc()
 				case <-done:
 				}
@@ -167,7 +169,7 @@ func (s *Service) Run(stop chan struct{}) error {
 					}
 				}
 			}
-		case <-stop:
+		case <-s.stop:
 			return nil
 		}
 	nextChange:
