@@ -256,6 +256,8 @@ func (s *Service) createAccountIfNecessary(etcdClient client.Client) error {
 		if err := acc.LoadKey(etcdClient); err != nil {
 			return fmt.Errorf("was expecting the account to have a key: %s", err)
 		}
+
+		return nil
 	}
 	// we got a non-404 error, return it
 	return err
