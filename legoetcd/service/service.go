@@ -101,7 +101,11 @@ func (s *Service) Run() error {
 		return fmt.Errorf("error registering the account: %s", err)
 	}
 	// watch the certificate on etcd, and send the certificate down the channel.
-	var cert *legoetcd.Cert
+	// initialize the certificate
+	cert, err = s.generateCertificateIfNecessary(etcdClient, acmeClient)
+	if err != nil {
+		return err
+	}
 	go func() {
 		w := kapi.Watcher(cert.CertPath(), nil)
 		for {
@@ -133,8 +137,8 @@ func (s *Service) Run() error {
 			}
 		}
 	}()
-	// initialize the certificate
-	cert, err = s.generateCertificateIfNecessary(etcdClient, acmeClient)
+	// send the cert down the channel (this locks up until the calling process can receive).
+	s.CertChan <- cert
 	// start the update loop
 	t := time.NewTicker(12 * time.Hour)
 	for {
