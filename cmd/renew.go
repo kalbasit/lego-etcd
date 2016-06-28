@@ -54,52 +54,6 @@ func init() {
 }
 
 func renew(cmd *cobra.Command, args []string) {
-	// get all the values from the persistent flags
-	pem, err := RootCmd.PersistentFlags().GetBool("pem")
-	if err != nil {
-		log.Fatalf("error loading the pem from the persistent flags: %s", err)
-	}
-	acceptTOS, err := RootCmd.PersistentFlags().GetBool("accept-tos")
-	if err != nil {
-		log.Fatalf("error loading the accept-tos from the persistent flags: %s", err)
-	}
-	dns, err := RootCmd.PersistentFlags().GetString("dns")
-	if err != nil {
-		log.Fatalf("error loading the dns from the persistent flags: %s", err)
-	}
-	httpAddr, err := RootCmd.PersistentFlags().GetString("http-addr")
-	if err != nil {
-		log.Fatalf("error loading the http-addr from the persistent flags: %s", err)
-	}
-	tlsAddr, err := RootCmd.PersistentFlags().GetString("tls-addr")
-	if err != nil {
-		log.Fatalf("error loading the tls-addr from the persistent flags: %s", err)
-	}
-	webRoot, err := RootCmd.PersistentFlags().GetString("webroot")
-	if err != nil {
-		log.Fatalf("error loading the webroot from the persistent flags: %s", err)
-	}
-	acmeServer, err := RootCmd.PersistentFlags().GetString("acme-server")
-	if err != nil {
-		log.Fatalf("error loading the acme-server from the persistent flags: %s", err)
-	}
-	email, err := RootCmd.PersistentFlags().GetString("email")
-	if err != nil {
-		log.Fatalf("error loading the email from the persistent flags: %s", err)
-	}
-	keyType, err := RootCmd.PersistentFlags().GetString("key-type")
-	if err != nil {
-		log.Fatalf("error loading the key-type from the persistent flags: %s", err)
-	}
-	domains, err := RootCmd.PersistentFlags().GetStringSlice("domains")
-	if err != nil {
-		log.Fatalf("error loading the domains from the persistent flags: %s", err)
-	}
-	etcdEndpoints, err := RootCmd.PersistentFlags().GetStringSlice("etcd-endpoints")
-	if err != nil {
-		log.Fatalf("error loading the etcd-endpoints from the persistent flags: %s", err)
-	}
-
 	// create an etcd client
 	etcdClient, err := client.New(client.Config{Endpoints: etcdEndpoints})
 	if err != nil {
