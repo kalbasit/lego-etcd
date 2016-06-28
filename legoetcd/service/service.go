@@ -35,6 +35,8 @@ type Service struct {
 	// CertChan is the channel where the service sends out the certificate at the
 	// retrieval and at the renewal time.
 	CertChan chan *legoetcd.Cert
+	// StopChan if closed will stop the service.
+	StopChan chan struct{}
 	// KeyType is the crypto type for the key, Supported: rsa2048, rsa4096,
 	// rsa8192, ec256, ec384.
 	KeyType acme.KeyType
@@ -50,7 +52,6 @@ type Service struct {
 	email       string
 	etcdConfig  client.Config
 	generatePEM bool
-	stop        chan struct{}
 	webroot     string
 }
 
@@ -58,9 +59,10 @@ type Service struct {
 // by setting the KeyType on the returned service. By default, the service will
 // generate a bundled certificate (containing the issuer certificate and your
 // certificate). To disable bundling, set `NoBundle` to true.
-func New(etcdConfig client.Config, acmeServer, email string, domains []string, csrFile string, acceptTOS, generatePEM bool, dns, webroot string) (*Service, chan struct{}) {
+func New(etcdConfig client.Config, acmeServer, email string, domains []string, csrFile string, acceptTOS, generatePEM bool, dns, webroot string) *Service {
 	return &Service{
 		CertChan: make(chan *legoetcd.Cert),
+		StopChan: make(chan struct{}),
 		KeyType:  acme.RSA2048,
 
 		acceptTOS:   acceptTOS,
@@ -71,7 +73,6 @@ func New(etcdConfig client.Config, acmeServer, email string, domains []string, c
 		email:       email,
 		etcdConfig:  etcdConfig,
 		generatePEM: generatePEM,
-		stop:        make(chan struct{}),
 		webroot:     webroot,
 	}
 }
@@ -110,7 +111,7 @@ func (s *Service) Run() error {
 				// block until either a stop which cancels the context or a stop event
 				// which is sent after the current next unblocks.
 				select {
-				case <-s.stop:
+				case <-s.StopChan:
 					cancelFunc()
 				case <-done:
 				}
@@ -169,7 +170,7 @@ func (s *Service) Run() error {
 					}
 				}
 			}
-		case <-s.stop:
+		case <-s.StopChan:
 			return nil
 		}
 	nextChange:
