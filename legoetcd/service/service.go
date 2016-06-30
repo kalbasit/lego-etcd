@@ -163,7 +163,7 @@ func (s *Service) Run() error {
 					}
 				} else {
 					// lock was grabbed, renew the certificate
-					if err := cert.Renew(acmeClient, s.NoBundle); err != nil {
+					if err := cert.Renew(acmeClient, !s.NoBundle); err != nil {
 						log.Printf("error while renewing the certificate: %s", err)
 						goto nextChange
 					}
@@ -204,7 +204,7 @@ func (s *Service) generateCertificateIfNecessary(etcdClient client.Client, acmeC
 		defer s.Unlock(etcdClient, lockPath)
 		// create a new certificate for domains or csr.
 		var failures map[string]error
-		cert, failures = acmeClient.NewCert(s.domains, s.csrFile, s.NoBundle)
+		cert, failures = acmeClient.NewCert(s.domains, s.csrFile, !s.NoBundle)
 		if len(failures) > 0 {
 			for k, v := range failures {
 				log.Printf("[%s] Could not obtain certificates\n\t%s", k, v.Error())
