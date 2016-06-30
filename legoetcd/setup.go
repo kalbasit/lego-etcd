@@ -26,11 +26,11 @@ var (
 	ErrAddressInvalid = errors.New("the address should be host:port")
 )
 
-func (c *Client) setupAccount(email string) error {
+func (c *Client) setupAccount(ec client.Client, email string) error {
 	// create a new account
 	c.Account = NewAccount(email)
 	// try loading from etcd
-	if err := c.Account.LoadKey(c.ETCD); err != nil {
+	if err := c.Account.LoadKey(ec); err != nil {
 		if client.IsKeyNotFound(err) {
 			// The account never existed, create one
 			c.Account.GenerateKey()
@@ -48,11 +48,11 @@ func (c *Client) setupChallenge(dns, webRoot, httpAddr, tlsAddr string) error {
 			return err
 		}
 
-		c.ACME.SetChallengeProvider(acme.HTTP01, provider)
+		c.Client.SetChallengeProvider(acme.HTTP01, provider)
 
 		// --webroot=foo indicates that the user specifically want to do a HTTP challenge
 		// infer that the user also wants to exclude all other challenges
-		c.ACME.ExcludeChallenges([]acme.Challenge{acme.DNS01, acme.TLSSNI01})
+		c.Client.ExcludeChallenges([]acme.Challenge{acme.DNS01, acme.TLSSNI01})
 	}
 
 	// setup HTTP port
@@ -61,7 +61,7 @@ func (c *Client) setupChallenge(dns, webRoot, httpAddr, tlsAddr string) error {
 			return ErrAddressInvalid
 		}
 
-		c.ACME.SetHTTPAddress(httpAddr)
+		c.Client.SetHTTPAddress(httpAddr)
 	}
 
 	// setup TLS port
@@ -70,7 +70,7 @@ func (c *Client) setupChallenge(dns, webRoot, httpAddr, tlsAddr string) error {
 			return ErrAddressInvalid
 		}
 
-		c.ACME.SetTLSAddress(tlsAddr)
+		c.Client.SetTLSAddress(tlsAddr)
 	}
 
 	if dns != "" {
@@ -106,11 +106,11 @@ func (c *Client) setupChallenge(dns, webRoot, httpAddr, tlsAddr string) error {
 		if err != nil {
 			return fmt.Errorf("error setting up the DNS provider: %s", err)
 		}
-		c.ACME.SetChallengeProvider(acme.DNS01, provider)
+		c.Client.SetChallengeProvider(acme.DNS01, provider)
 
 		// --dns=foo indicates that the user specifically want to do a DNS challenge
 		// infer that the user also wants to exclude all other challenges
-		c.ACME.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
+		c.Client.ExcludeChallenges([]acme.Challenge{acme.HTTP01, acme.TLSSNI01})
 	}
 
 	return nil

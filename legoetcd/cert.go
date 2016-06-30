@@ -31,8 +31,6 @@ type Cert struct {
 	Domains []string
 	CSR     *x509.CertificateRequest
 	Cert    acme.CertificateResource
-
-	client *Client
 }
 
 // NewCert obtains a new certificate for the domains or the csr.
@@ -47,7 +45,7 @@ func (c *Client) NewCert(domains []string, csrFile string, bundle bool) (*Cert, 
 
 		// generate a domains certificate
 		if len(domains) > 0 {
-			cert, failures = c.ACME.ObtainCertificate(domains, bundle, nil)
+			cert, failures = c.Client.ObtainCertificate(domains, bundle, nil)
 		} else {
 			// read the CSR
 			csr, err = readCSRFile(csrFile)
@@ -56,7 +54,7 @@ func (c *Client) NewCert(domains []string, csrFile string, bundle bool) (*Cert, 
 				failures = map[string]error{"csr": err}
 			} else {
 				// obtain a certificate for this CSR
-				cert, failures = c.ACME.ObtainCertificateForCSR(*csr, bundle)
+				cert, failures = c.Client.ObtainCertificateForCSR(*csr, bundle)
 			}
 		}
 	}
@@ -68,78 +66,58 @@ func (c *Client) NewCert(domains []string, csrFile string, bundle bool) (*Cert, 
 		Domains: domains,
 		CSR:     csr,
 		Cert:    cert,
-		client:  c,
 	}, nil
 }
 
 // LoadCert loads the certificate from ETCD
-func (c *Client) LoadCert(domains []string) (*Cert, error) {
+func LoadCert(ec client.Client, domains []string) (*Cert, error) {
 	cert := &Cert{
 		Domains: domains,
 		Cert:    acme.CertificateResource{},
-		client:  c,
 	}
 
-	if err := cert.loadMeta(); err != nil {
+	if err := cert.loadMeta(ec); err != nil {
 		return nil, err
 	}
-	if err := cert.loadCert(); err != nil {
+	if err := cert.loadCert(ec); err != nil {
 		return nil, err
 	}
-	if err := cert.loadKey(); err != nil {
+	if err := cert.loadKey(ec); err != nil {
 		return nil, err
 	}
 
 	return cert, nil
 }
 
-func (c *Cert) loadMeta() error {
-	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
-	// get it from etcd
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := kapi.Get(ctx, fmt.Sprintf(metaKey, c.Domains[0]), nil)
-	if err != nil {
+// Reload re-reads the certificate from etcd.
+func (c *Cert) Reload(ec client.Client) error {
+	if err := c.loadMeta(ec); err != nil {
 		return err
 	}
-	cancelFunc()
-	// unmarshal right to the struct
-	return json.Unmarshal([]byte(resp.Node.Value), &c.Cert)
-}
-
-func (c *Cert) loadCert() error {
-	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
-	// get it from etcd
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := kapi.Get(ctx, fmt.Sprintf(certKey, c.Domains[0]), nil)
-	if err != nil {
+	if err := c.loadCert(ec); err != nil {
 		return err
 	}
-	cancelFunc()
-	// load the cert to the struct
-	c.Cert.Certificate = []byte(resp.Node.Value)
+	if err := c.loadKey(ec); err != nil {
+		return err
+	}
 	return nil
 }
 
-func (c *Cert) loadKey() error {
-	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
-	// get it from etcd
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := kapi.Get(ctx, fmt.Sprintf(keyKey, c.Domains[0]), nil)
-	if err != nil {
-		return err
-	}
-	cancelFunc()
-	// load the cert to the struct
-	c.Cert.PrivateKey = []byte(resp.Node.Value)
-	return nil
-}
+// MetaPath returns the path where the metadata of this certificate is store on etcd.
+func (c *Cert) MetaPath() string { return fmt.Sprintf(metaKey, c.Domains[0]) }
+
+// CertPath returns the path where the CRT of this certificate is store on etcd.
+func (c *Cert) CertPath() string { return fmt.Sprintf(certKey, c.Domains[0]) }
+
+// KeyPath returns the path where the PrivateKey of this certificate is store on etcd.
+func (c *Cert) KeyPath() string { return fmt.Sprintf(keyKey, c.Domains[0]) }
+
+// PemPath returns the path where the PEM of this certificate is store on etcd.
+func (c *Cert) PemPath() string { return fmt.Sprintf(pemKey, c.Domains[0]) }
 
 // Renew renews the certificate through the ACME client.
-func (c *Cert) Renew(bundle bool) error {
-	cert, err := c.client.ACME.RenewCertificate(c.Cert, bundle)
+func (c *Cert) Renew(ac *Client, bundle bool) error {
+	cert, err := ac.RenewCertificate(c.Cert, bundle)
 	if err != nil {
 		return err
 	}
@@ -147,20 +125,40 @@ func (c *Cert) Renew(bundle bool) error {
 	return nil
 }
 
+// Expiration returns the certificate's expiration date and time.
+func (c *Cert) Expiration() (time.Time, error) {
+	return acme.GetPEMCertExpiration(c.Cert.Certificate)
+}
+
+// ExpiresIn returns the duration until the certificate expires.
+func (c *Cert) ExpiresIn() (time.Duration, error) {
+	// get the expiration date/time
+	expTime, err := acme.GetPEMCertExpiration(c.Cert.Certificate)
+	if err != nil {
+		return 0, err
+	}
+	return expTime.Sub(time.Now()), nil
+}
+
+// PEM returns this certificate PEM-encoded.
+func (c *Cert) PEM() []byte {
+	return bytes.Join([][]byte{c.Cert.Certificate, c.Cert.PrivateKey}, nil)
+}
+
 // Save saves the certificate to etcd.
-func (c *Cert) Save(pem bool) error {
-	if err := c.saveCert(); err != nil {
+func (c *Cert) Save(ec client.Client, pem bool) error {
+	if err := c.saveCert(ec); err != nil {
 		return err
 	}
-	if err := c.saveMeta(); err != nil {
+	if err := c.saveMeta(ec); err != nil {
 		return err
 	}
 	if c.Cert.PrivateKey != nil {
-		if err := c.saveKey(); err != nil {
+		if err := c.saveKey(ec); err != nil {
 			return err
 		}
 		if pem {
-			if err := c.savePem(); err != nil {
+			if err := c.savePem(ec); err != nil {
 				return err
 			}
 		}
@@ -171,9 +169,53 @@ func (c *Cert) Save(pem bool) error {
 	return nil
 }
 
-func (c *Cert) saveCert() error {
+func (c *Cert) loadMeta(ec client.Client) error {
 	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
+	kapi := client.NewKeysAPI(ec)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, c.MetaPath(), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// unmarshal right to the struct
+	return json.Unmarshal([]byte(resp.Node.Value), &c.Cert)
+}
+
+func (c *Cert) loadCert(ec client.Client) error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(ec)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, c.CertPath(), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// load the cert to the struct
+	c.Cert.Certificate = []byte(resp.Node.Value)
+	return nil
+}
+
+func (c *Cert) loadKey(ec client.Client) error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(ec)
+	// get it from etcd
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+	resp, err := kapi.Get(ctx, c.KeyPath(), nil)
+	if err != nil {
+		return err
+	}
+	cancelFunc()
+	// load the cert to the struct
+	c.Cert.PrivateKey = []byte(resp.Node.Value)
+	return nil
+}
+
+func (c *Cert) saveCert(ec client.Client) error {
+	// create a new keys API
+	kapi := client.NewKeysAPI(ec)
 	// save it to etcd
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
 	if _, err := kapi.Set(ctx, fmt.Sprintf(certKey, c.Cert.Domain), string(c.Cert.Certificate), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
@@ -184,9 +226,9 @@ func (c *Cert) saveCert() error {
 	return nil
 }
 
-func (c *Cert) saveKey() error {
+func (c *Cert) saveKey(ec client.Client) error {
 	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
+	kapi := client.NewKeysAPI(ec)
 	// save it to etcd
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
 	if _, err := kapi.Set(ctx, fmt.Sprintf(keyKey, c.Cert.Domain), string(c.Cert.PrivateKey), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
@@ -197,14 +239,14 @@ func (c *Cert) saveKey() error {
 	return nil
 }
 
-func (c *Cert) saveMeta() error {
+func (c *Cert) saveMeta(ec client.Client) error {
 	// create the JSON
 	jsonBytes, err := json.Marshal(c.Cert)
 	if err != nil {
 		return err
 	}
 	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
+	kapi := client.NewKeysAPI(ec)
 	// save it to etcd
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
 	if _, err := kapi.Set(ctx, fmt.Sprintf(metaKey, c.Cert.Domain), string(jsonBytes), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {
@@ -215,11 +257,11 @@ func (c *Cert) saveMeta() error {
 	return nil
 }
 
-func (c *Cert) savePem() error {
+func (c *Cert) savePem(ec client.Client) error {
 	// combine the cert/key
-	pem := bytes.Join([][]byte{c.Cert.Certificate, c.Cert.PrivateKey}, nil)
+	pem := c.PEM()
 	// create a new keys API
-	kapi := client.NewKeysAPI(c.client.ETCD)
+	kapi := client.NewKeysAPI(ec)
 	// save it to etcd
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
 	if _, err := kapi.Set(ctx, fmt.Sprintf(pemKey, c.Cert.Domain), string(pem), &client.SetOptions{PrevExist: client.PrevIgnore}); err != nil {

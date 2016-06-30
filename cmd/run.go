@@ -71,7 +71,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	// register the account and accept tos
-	if err := acmeClient.RegisterAccount(acceptTOS); err != nil {
+	if err := acmeClient.RegisterAccount(etcdClient, acceptTOS); err != nil {
 		if err == legoetcd.ErrMustAcceptTOS {
 			log.Fatalf("Please re-run with --accept-tos to indicate you accept Let's encrypt terms of service.")
 		}
@@ -88,7 +88,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	// save the certificate
-	if err := cert.Save(pem); err != nil {
+	if err := cert.Save(etcdClient, pem); err != nil {
 		log.Fatalf("error saving the certificate: %s", err)
 	}
 }
