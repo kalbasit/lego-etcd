@@ -94,6 +94,7 @@ func (s *Service) Run() error {
 		return fmt.Errorf("error creating a new ACME server: %s", err)
 	}
 	// register the account and accept tos
+	log.Printf("registering the account with Let's Encrypt: %s", s.email)
 	if err := acmeClient.RegisterAccount(etcdClient, s.acceptTOS); err != nil {
 		if err == legoetcd.ErrMustAcceptTOS {
 			return ErrTOSNotAccepted
@@ -184,12 +185,14 @@ func (s *Service) Run() error {
 
 func (s *Service) generateCertificateIfNecessary(etcdClient client.Client, acmeClient *legoetcd.Client) (*legoetcd.Cert, error) {
 	// try loading the certificate
+	log.Printf("loading the certificates for %v from etcd", s.domains)
 	cert, err := legoetcd.LoadCert(etcdClient, s.domains)
 	if err == nil {
 		return cert, nil
 	}
 	// we do not have a certificate, create a lock and create it - or wait for
 	// another process to do so.
+	log.Print("certificates were not found in etcd, fetching new ones")
 	lockPath := fmt.Sprintf(certLockKey, s.domains[0])
 	// try to grab a lock
 	if err := s.Lock(etcdClient, lockPath); err != nil {
@@ -226,6 +229,7 @@ func (s *Service) generateCertificateIfNecessary(etcdClient client.Client, acmeC
 func (s *Service) createAccountIfNecessary(etcdClient client.Client) error {
 	// do we have an account?
 	acc := legoetcd.NewAccount(s.email)
+	log.Printf("loading the account from etcd: %s", s.email)
 	err := acc.Load(etcdClient)
 	if err == nil {
 		// ok we have an account, short-circuit out of this func
@@ -233,6 +237,7 @@ func (s *Service) createAccountIfNecessary(etcdClient client.Client) error {
 	}
 	// we got an error, is it a not-found error (means account does not exist)?
 	if client.IsKeyNotFound(err) {
+		log.Print("account not found in etcd, creating one")
 		// we do not have an account, create a lock and create it - or wait for
 		// another process to do so.
 		lockPath := fmt.Sprintf(accountLockKey, s.email)
