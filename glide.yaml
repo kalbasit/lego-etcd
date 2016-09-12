@@ -1,0 +1,25 @@
+package: github.com/kalbasit/lego-etcd
+import:
+- package: github.com/coreos/etcd
+  version: ^3.0.8
+  subpackages:
+  - client
+- package: github.com/spf13/cobra
+- package: github.com/xenolf/lego
+  version: 82ac43327b01319544c050d5d78a4edeff9565d2
+  subpackages:
+  - acme
+  - providers/dns/cloudflare
+  - providers/dns/digitalocean
+  - providers/dns/dnsimple
+  - providers/dns/dyn
+  - providers/dns/gandi
+  - providers/dns/googlecloud
+  - providers/dns/namecheap
+  - providers/dns/rfc2136
+  - providers/dns/route53
+  - providers/dns/vultr
+  - providers/http/webroot
+- package: golang.org/x/net
+  subpackages:
+  - context
